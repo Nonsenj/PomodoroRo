@@ -4,6 +4,7 @@ use color_eyre::{
 };
 use std::io;
 use std::time::{SystemTime, Duration, Instant};
+use chrono::{Local};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -99,13 +100,11 @@ impl Widget for &App {
 	    //.padding(Padding::top(2))
 	    .border_set(border::THICK);
 	
-	let sys_time = SystemTime::now();
-	let time = self.clock.to_string(); 
+	let sys_time = Local::now();
+	let time = sys_time.format("%H:%M:%S").to_string(); 
 	let text = Text::from(Line::from(time).bold());
-	let elapsed = self.timer.start.elapsed().as_secs_f32();
-	let message = format!("Timer: {elapsed:.2?}s");
 
-	Paragraph::new(message)
+	Paragraph::new(text)
 	    .centered()
 	    //.style(Style::new().red().on_white())
 	    .block(block)
