@@ -162,6 +162,24 @@ impl Widget for &App {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
 
+    #[test]
+    fn switches_to_break_after_25_minutes(){
+	let mut t = Timer::new();
+	t.toggle();
+	t.tick(Duration::from_secs(25*60));
+	assert_eq!(t.phase, Phase::Break);
+    }
+
+    #[test]
+    fn paused_timer_does_not_advance() {
+	let mut t = Timer::new();
+	t.tick(Duration::from_secs(10));
+	assert_eq!(t.remaining, Phase::Work.duration());
+    }
+}
 
 
