@@ -4,7 +4,7 @@ use color_eyre::{
 };
 use std::io;
 use std::time::{SystemTime, Duration, Instant};
-use chrono::{Local};
+use chrono::{Local, NaiveTime};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
@@ -24,20 +24,81 @@ fn main() -> Result<()>{
     app_result
 }
 
+const TICK_RATE: Duration = Duration::from_millis(100);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase { Work , Break }
+
+impl Phase {
+    fn duration(self) -> Duration{
+	match self {
+	    Phase::Work => Duration::from_secs(25 * 60),
+	    Phase::Break => Duration::from_secs(5 * 60),
+	}
+    }
+}
+
+#[derive(Debug)]
+struct Timer {
+    phase: Phase,
+    remaining: Duration,
+    running: bool,
+}
+
+impl Default for Timer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Timer {
+    fn new() -> Self {
+	Self { phase: Phase::Work, remaining: Phase::Work.duration(), running: false }
+    }
+
+    fn toggle(&mut self) {self.running = !self.running}
+
+    fn tick(&mut self, dt: Duration) {
+	if !self.running { return; }
+	self.remaining = self.remaining.saturating_sub(dt);
+	if self.remaining.is_zero() {
+	    self.phase = match self.phase {
+		Phase::Work => Phase::Break,
+		Phase::Break => Phase::Work,
+	    };
+	    self.remaining = self.phase.duration();
+	}
+    }
+
+    fn display(&self) -> String {
+	let s = self.remaining.as_secs();
+	format!("{:02}:{:02}", s/60, s%60)
+    }
+
+    
+}
+
+
 #[derive(Debug, Default)]
 pub struct App {
     timer: Timer,
-    clock: u8,
-    toggle: bool,
     exit: bool,
 }
 
 impl App {
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
+	let mut last_tick = Instant::now();	
 	while !self.exit {
 	    terminal.draw(|frame| self.draw(frame))?;
-	    self.handle_events()?;
-	    //self.on_time();
+	    
+	    let timeout = TICK_RATE.saturating_sub(last_tick.elapsed());
+	    if event::poll(timeout)? {
+		self.handle_events()?;
+	    }
+
+	    let now = Instant::now();
+	    self.timer.tick(now - last_tick);
+	    last_tick = now;
 	}
 	Ok(())
     }
@@ -62,7 +123,7 @@ impl App {
     fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
 	match key_event.code {
 	    KeyCode::Char('q') => self.exit(),
-	    KeyCode::Char(' ') => self.toggle_timer()?,
+	    KeyCode::Char(' ') => self.timer.toggle(),
 	    _ => {}
 	}
 	Ok(())
@@ -70,17 +131,6 @@ impl App {
 
     fn exit(&mut self) {
 	self.exit = true;
-    }
-
-    fn toggle_timer(&mut self) -> Result<()>{
-	self.toggle = !self.toggle;
-	Ok(())
-    }
-
-    fn on_time(&mut self){
-	if self.toggle {
-	    (1..=10).for_each(|_| self.clock += 1);
-	}
     }
 }
 
@@ -97,39 +147,21 @@ impl Widget for &App {
 	let block = Block::bordered()
 	    .title(title.centered())
 	    .title_bottom(instructions.centered())
-	    //.padding(Padding::top(2))
 	    .border_set(border::THICK);
 	
-	let sys_time = Local::now();
-	let time = sys_time.format("%H:%M:%S").to_string(); 
-	let text = Text::from(Line::from(time).bold());
+	let text = Text::from(vec![
+	    Line::from(self.timer.display()).bold(),
+	    Line::from(self.timer.running.to_string()).bold(),
+	]);
 
 	Paragraph::new(text)
 	    .centered()
-	    //.style(Style::new().red().on_white())
 	    .block(block)
 	    .render(area, buf);
 
     }
 }
 
-#[derive(Debug)]
-struct Timer {
-    start: Instant,
-}
 
-impl Default for Timer {
-    fn default() -> Self {
-	Self {
-	    start: Instant::now(),
-	}
-    }
-}
 
-impl Widget for &Timer {
-    fn render(self, area: Rect, buf: &mut Buffer) {
-	let elapsed = self.start.elapsed().as_secs_f32();
-	let message = format!("Timer: {elapsed:.2?}s");
-	message.render(area, buf);
-    }
-}
+
